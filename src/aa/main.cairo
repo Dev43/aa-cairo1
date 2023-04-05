@@ -6,6 +6,8 @@ use debug::PrintTrait;
 mod Account {
     use array::SpanTrait;
     use array::ArrayTrait;
+    use option::OptionTrait;
+    use serde::Serde;
     use box::BoxTrait;
     use ecdsa::check_ecdsa_signature;
     use starknet::contract_address::ContractAddressPartialEq;
@@ -52,25 +54,51 @@ mod Account {
     }
 
     #[external]
-    fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Span::<felt252>> {
+    fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Array::<felt252>> {
         assert_valid_transaction();
         let mut res = ArrayTrait::new();
         _execute_calls(calls, res)
     }
 
     fn _execute_calls(
-        mut calls: Array<AccountCall>, mut res: Array::<Span::<felt252>>
-    ) -> Array::<Span::<felt252>> {
+        mut calls: Array<AccountCall>, mut res: Array::<Array::<felt252>>
+    ) -> Array::<Array::<felt252>> {
         match calls.pop_front() {
             Option::Some(call) => {
-                let _res = _call_contract(call);
-                res.append(_res);
+                let mut _res = _call_contract(call);
+                let r = convert_span_to_array(_res);
+                res.append(r);
                 return _execute_calls(calls, res);
             },
             Option::None(_) => {
                 return res;
             },
         }
+    }
+
+    fn convert_span_to_array(mut span: Span<felt252>) -> Array<felt252> {
+        let length = *span.pop_front().unwrap();
+        let mut arr = ArrayTrait::new();
+        deserialize_array(ref span, arr, length).unwrap()
+    }
+
+    // taken from the corelib
+    fn deserialize_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
+        ref serialized: Span<felt252>, mut curr_output: Array<T>, remaining: felt252
+    ) -> Option<Array<T>> {
+        match gas::withdraw_gas() {
+            Option::Some(_) => {},
+            Option::None(_) => {
+                let mut data = ArrayTrait::new();
+                data.append('Out of gas');
+                panic(data);
+            },
+        }
+        if remaining == 0 {
+            return Option::Some(curr_output);
+        }
+        curr_output.append(TSerde::deserialize(ref serialized)?);
+        deserialize_array(ref serialized, curr_output, remaining - 1)
     }
 
     #[external]
