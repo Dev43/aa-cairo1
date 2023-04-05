@@ -2,22 +2,142 @@ use starknet::get_execution_info;
 use debug::PrintTrait;
 
 
-//https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/system-calls-cairo1/
-fn fib(a: felt252, b: felt252, n: felt252) -> felt252 {
-    let num: felt252 = 3;
-    num.print();
+#[account_contract]
+mod Account {
+    use array::SpanTrait;
+    use array::ArrayTrait;
+    use box::BoxTrait;
+    use ecdsa::check_ecdsa_signature;
+    use starknet::contract_address::ContractAddressPartialEq;
+    use starknet::ContractAddress;
+    use starknet::contract_address::ContractAddressSerde;
 
-    match gas::withdraw_gas_all(get_builtin_costs()) {
-        Option::Some(_) => {},
-        Option::None(_) => {
-            let mut err_data = array::array_new();
-            array::array_append(ref err_data, 'Out of gas');
-            panic(err_data);
-        },
+    use starknet::get_caller_address;
+    use starknet::get_contract_address;
+    use starknet::get_tx_info;
+
+    #[derive(Drop)]
+    struct AccountCall {
+        to: ContractAddress,
+        selector: felt252,
+        calldata: Array::<felt252>
     }
 
-    match n {
-        0 => a,
-        _ => fib(b, a + b, n - 1),
+
+    impl AccountCallSerde of serde::Serde::<AccountCall> {
+        fn serialize(ref serialized: Array<felt252>, input: AccountCall) {
+            serde::Serde::serialize(ref serialized, input.to);
+            serde::Serde::serialize(ref serialized, input.selector);
+            serde::Serde::serialize(ref serialized, input.calldata);
+        }
+        fn deserialize(ref serialized: Span<felt252>) -> Option<AccountCall> {
+            Option::Some(
+                AccountCall {
+                    to: serde::Serde::<ContractAddress>::deserialize(ref serialized)?,
+                    selector: serde::Serde::deserialize(ref serialized)?,
+                    calldata: serde::Serde::<Array::<felt252>>::deserialize(ref serialized)?,
+                }
+            )
+        }
+    }
+
+
+    struct Storage {
+        public_key: felt252, 
+    }
+
+    #[constructor]
+    fn constructor(_public_key: felt252) {
+        public_key::write(_public_key);
+    }
+
+    #[external]
+    fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Span::<felt252>> {
+        assert_valid_transaction();
+        let mut res = ArrayTrait::new();
+        _execute_calls(calls, res)
+    }
+
+    fn _execute_calls(
+        mut calls: Array<AccountCall>, mut res: Array::<Span::<felt252>>
+    ) -> Array::<Span::<felt252>> {
+        match calls.pop_front() {
+            Option::Some(call) => {
+                let _res = _call_contract(call);
+                res.append(_res);
+                return _execute_calls(calls, res);
+            },
+            Option::None(_) => {
+                return res;
+            },
+        }
+    }
+
+    #[external]
+    fn __validate__(calls: Array::<AccountCall>) {
+        assert_valid_transaction()
+    }
+
+    #[external]
+    fn __validate_declare__(class_hash: felt252) {
+        assert_valid_transaction()
+    }
+
+    #[external]
+    fn __validate_deploy__(
+        class_hash: felt252, contract_address_salt: felt252, _public_key: felt252
+    ) {
+        assert_valid_transaction()
+    }
+
+    #[external]
+    fn set_public_key(new_public_key: felt252) {
+        assert_only_self();
+        public_key::write(new_public_key);
+    }
+
+    #[view]
+    fn get_public_key() -> felt252 {
+        public_key::read()
+    }
+
+    #[view]
+    fn is_valid_signature(message: felt252, sig_r: felt252, sig_s: felt252) -> bool {
+        let _public_key: felt252 = public_key::read();
+        check_ecdsa_signature(message, _public_key, sig_r, sig_s)
+    }
+
+    // Internals
+    fn assert_only_self() {
+        let caller = get_caller_address();
+        let self = get_contract_address();
+        assert(self == caller, 'Account: unauthorized.');
+    }
+
+    fn assert_valid_transaction() {
+        let tx_info = get_tx_info().unbox();
+        let tx_hash = tx_info.transaction_hash;
+        let signature = tx_info.signature;
+
+        assert(signature.len() == 2_u32, 'bad signature length');
+
+        let is_valid = is_valid_signature(tx_hash, *signature.at(0_u32), *signature.at(1_u32));
+
+        assert(is_valid, 'Invalid signature.');
+    }
+
+    fn _call_contract(call: AccountCall) -> Span::<felt252> {
+        starknet::call_contract_syscall(
+            call.to, call.selector, call.calldata.span()
+        ).unwrap_syscall()
     }
 }
+//https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/system-calls-cairo1/
+
+// create an AA wallet that allows anyone to use the funds in the contract.Bye
+
+// they have a sort of session key - only can spend so much in x amount of time.Bye
+
+// every action they do can only be going from the contract - to designated contracts (aave etc).
+
+
