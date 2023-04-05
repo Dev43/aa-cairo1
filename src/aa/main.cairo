@@ -76,30 +76,6 @@ mod Account {
         }
     }
 
-    fn convert_span_to_array(mut span: Span<felt252>) -> Array<felt252> {
-        let length = *span.pop_front().unwrap();
-        let mut arr = ArrayTrait::new();
-        deserialize_array(ref span, arr, length).unwrap()
-    }
-
-    // taken from the corelib
-    fn deserialize_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
-        ref serialized: Span<felt252>, mut curr_output: Array<T>, remaining: felt252
-    ) -> Option<Array<T>> {
-        match gas::withdraw_gas() {
-            Option::Some(_) => {},
-            Option::None(_) => {
-                let mut data = ArrayTrait::new();
-                data.append('Out of gas');
-                panic(data);
-            },
-        }
-        if remaining == 0 {
-            return Option::Some(curr_output);
-        }
-        curr_output.append(TSerde::deserialize(ref serialized)?);
-        deserialize_array(ref serialized, curr_output, remaining - 1)
-    }
 
     #[external]
     fn __validate__(calls: Array::<AccountCall>) {
@@ -158,6 +134,32 @@ mod Account {
         starknet::call_contract_syscall(
             call.to, call.selector, call.calldata.span()
         ).unwrap_syscall()
+    }
+
+
+    fn convert_span_to_array(mut span: Span<felt252>) -> Array<felt252> {
+        let length = *span.pop_front().unwrap();
+        let mut arr = ArrayTrait::new();
+        deserialize_array(ref span, arr, length).unwrap()
+    }
+
+    // taken from the corelib
+    fn deserialize_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
+        ref serialized: Span<felt252>, mut curr_output: Array<T>, remaining: felt252
+    ) -> Option<Array<T>> {
+        match gas::withdraw_gas() {
+            Option::Some(_) => {},
+            Option::None(_) => {
+                let mut data = ArrayTrait::new();
+                data.append('Out of gas');
+                panic(data);
+            },
+        }
+        if remaining == 0 {
+            return Option::Some(curr_output);
+        }
+        curr_output.append(TSerde::deserialize(ref serialized)?);
+        deserialize_array(ref serialized, curr_output, remaining - 1)
     }
 }
 //https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/system-calls-cairo1/
