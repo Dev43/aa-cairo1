@@ -6,6 +6,9 @@ mod Account {
     use dict::Felt252DictTrait;
     use debug::PrintTrait;
     use starknet::StorageAccess;
+    use traits::PartialOrd;
+    use integer::U256PartialOrd;
+    use integer::u256;
 
     use starknet::SyscallResult;
 
@@ -52,26 +55,36 @@ mod Account {
     struct Storage {
         s_public_key: felt252,
         // public_key, nonce and balance like this for now
-        // as I don't have docs for the storageAccess 
-        s_pk_map: LegacyMap<felt252, felt252>,
-        s_nonce_map: LegacyMap<felt252, felt252>,
-        s_balance_map: LegacyMap<felt252, felt252>,
-        contract_balance: felt252,
+        // as I don't have docs for the StorageAccess 
+        s_pk_map: LegacyMap<ContractAddress, felt252>,
+        s_nonce_map: LegacyMap<ContractAddress, u256>,
+        s_balance_map: LegacyMap<ContractAddress, u256>,
+        contract_balance: u256,
     }
 
     #[constructor]
     fn constructor(_public_key: felt252) {
         s_public_key::write(_public_key);
         // we mint a balance of 10 million tokens to the contract
-        contract_balance::write(10000000);
+        contract_balance::write(u256 { low: 10000000_u128, high: 0_u128 });
     }
 
     #[external]
     fn register_participant() {
         let participant_address = get_caller_address();
-        let a = s_pk_map::read(1);
-        assert(a != 0, 'already registered');
+        let public_key = s_pk_map::read(participant_address);
+        assert(public_key != 0, 'already registered');
+        // we set their pk
+        s_pk_map::write(participant_address, public_key);
+        // first we check if the current balance in the contract has enough tokens to give our user 1000 tokens
+        let contract_balance = contract_balance::read();
+        assert(contract_balance < u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
+        // we give them 1000 tokens
+        s_balance_map::write(participant_address, u256 { low: 10000000_u128, high: 0_u128 });
+        // we set nonce to 0
+        s_nonce_map::write(participant_address, u256 { low: 0_u128, high: 0_u128 });
     }
+
 
     #[external]
     fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Array::<felt252>> {
