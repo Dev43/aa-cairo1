@@ -1,4 +1,9 @@
 use aa::main::Account;
+use aa::erc20::ERC20;
+use debug::PrintTrait;
+use starknet::contract_address_try_from_felt252;
+use starknet::get_caller_address;
+use option::OptionTrait;
 
 #[test]
 #[available_gas(2000000)]
@@ -21,4 +26,18 @@ fn test_valid_signature() {
         Account::is_valid_signature(message_hash, signature_r, signature_s),
         'signature returned false'
     );
+}
+
+#[test]
+#[available_gas(2000000)]
+fn test_erc20() {
+    let erc20 = ERC20::constructor(
+        'test',
+        'TST',
+        u256 { low: 1000000_u128, high: 0_u128 },
+        contract_address_try_from_felt252(
+            0x7b7454acbe7845da996377f85eb0892044d75ae95d04d3325a391951f35d2ec
+        ).unwrap()
+    );
+    assert(ERC20::name() == 'test', 'name is not the same');
 }

@@ -107,6 +107,11 @@ mod ERC20 {
     }
 
     #[view]
+    fn owner() -> ContractAddress {
+        _owner::read()
+    }
+
+    #[view]
     fn total_supply() -> u256 {
         ERC20::total_supply()
     }
