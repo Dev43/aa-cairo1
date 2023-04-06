@@ -1,12 +1,15 @@
-use starknet::get_execution_info;
-use debug::PrintTrait;
-
-
 #[account_contract]
 mod Account {
     use array::SpanTrait;
     use array::ArrayTrait;
     use option::OptionTrait;
+    use dict::Felt252DictTrait;
+    use debug::PrintTrait;
+    use starknet::StorageAccess;
+
+    use starknet::SyscallResult;
+
+    use dict::Felt252Dict;
     use serde::Serde;
     use box::BoxTrait;
     use ecdsa::check_ecdsa_signature;
@@ -14,6 +17,8 @@ mod Account {
     use starknet::ContractAddress;
     use starknet::contract_address::ContractAddressSerde;
 
+
+    // use starknet::get_execution_info;
     use starknet::get_caller_address;
     use starknet::get_contract_address;
     use starknet::get_tx_info;
@@ -45,12 +50,27 @@ mod Account {
 
 
     struct Storage {
-        public_key: felt252, 
+        s_public_key: felt252,
+        // public_key, nonce and balance like this for now
+        // as I don't have docs for the storageAccess 
+        s_pk_map: LegacyMap<felt252, felt252>,
+        s_nonce_map: LegacyMap<felt252, felt252>,
+        s_balance_map: LegacyMap<felt252, felt252>,
+        contract_balance: felt252,
     }
 
     #[constructor]
     fn constructor(_public_key: felt252) {
-        public_key::write(_public_key);
+        s_public_key::write(_public_key);
+        // we mint a balance of 10 million tokens to the contract
+        contract_balance::write(10000000);
+    }
+
+    #[external]
+    fn register_participant() {
+        let participant_address = get_caller_address();
+        let a = s_pk_map::read(1);
+        assert(a != 0, 'already registered');
     }
 
     #[external]
@@ -97,17 +117,17 @@ mod Account {
     #[external]
     fn set_public_key(new_public_key: felt252) {
         assert_only_self();
-        public_key::write(new_public_key);
+        s_public_key::write(new_public_key);
     }
 
     #[view]
     fn get_public_key() -> felt252 {
-        public_key::read()
+        s_public_key::read()
     }
 
     #[view]
     fn is_valid_signature(message: felt252, sig_r: felt252, sig_s: felt252) -> bool {
-        let _public_key: felt252 = public_key::read();
+        let _public_key: felt252 = s_public_key::read();
         check_ecdsa_signature(message, _public_key, sig_r, sig_s)
     }
 
