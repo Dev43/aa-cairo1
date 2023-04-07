@@ -56,7 +56,8 @@ mod Account {
     struct AccountCall {
         to: ContractAddress,
         selector: felt252,
-        calldata: Array::<felt252>
+        public_key: felt252,
+        calldata: Array::<felt252>,
     }
 
 
@@ -64,6 +65,7 @@ mod Account {
         fn serialize(ref serialized: Array<felt252>, input: AccountCall) {
             serde::Serde::serialize(ref serialized, input.to);
             serde::Serde::serialize(ref serialized, input.selector);
+            serde::Serde::serialize(ref serialized, input.public_key);
             serde::Serde::serialize(ref serialized, input.calldata);
         }
         fn deserialize(ref serialized: Span<felt252>) -> Option<AccountCall> {
@@ -71,6 +73,7 @@ mod Account {
                 AccountCall {
                     to: serde::Serde::<ContractAddress>::deserialize(ref serialized)?,
                     selector: serde::Serde::deserialize(ref serialized)?,
+                    public_key: serde::Serde::deserialize(ref serialized)?,
                     calldata: serde::Serde::<Array::<felt252>>::deserialize(ref serialized)?,
                 }
             )
@@ -271,9 +274,10 @@ mod Account {
     }
 
     #[view]
-    fn is_valid_signature(message: felt252, sig_r: felt252, sig_s: felt252) -> bool {
-        let _public_key: felt252 = s_owner_public_key::read();
-        check_ecdsa_signature(message, _public_key, sig_r, sig_s)
+    fn is_valid_signature(
+        message: felt252, public_key: felt252, sig_r: felt252, sig_s: felt252
+    ) -> bool {
+        check_ecdsa_signature(message, public_key, sig_r, sig_s)
     }
 
     #[view]
@@ -303,9 +307,19 @@ mod Account {
         let tx_hash = tx_info.transaction_hash;
         let signature = tx_info.signature;
 
+        let caller = get_caller_address();
+
+        let p = s_participants::read(caller);
+        // we ensure this user is registered
+        assert(p.public_key != 0, 'not registered');
+        // TODO time limit
+        // assert(p.timeout != 0, 'timedout');
+
         assert(signature.len() == 2_u32, 'bad signature length');
 
-        let is_valid = is_valid_signature(tx_hash, *signature.at(0_u32), *signature.at(1_u32));
+        let is_valid = is_valid_signature(
+            tx_hash, p.public_key, *signature.at(0_u32), *signature.at(1_u32)
+        );
 
         assert(is_valid, 'Invalid signature.');
     }
