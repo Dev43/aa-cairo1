@@ -51,10 +51,9 @@ fn test_participant_registration_and_access() {
     set_caller_address(contract_address_try_from_felt252(main_address()).unwrap());
     Account::register_participant();
     let participant = Account::participants(main_address());
-    participant.public_key.print();
-    participant.balance.print();
     let contract_balance = Account::balance();
-    contract_balance.print();
+    assert(contract_balance == u256 { low: 9999000_u128, high: 0_u128 }, 'balance is wrong');
+    assert(participant.balance == 1000_u128, 'participant balance is wrong');
     assert(participant.public_key != 0, 'participant is not registered');
 }
 
