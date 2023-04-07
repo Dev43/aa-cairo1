@@ -5,12 +5,10 @@ mod Account {
     use option::OptionTrait;
     use dict::Felt252DictTrait;
     use debug::PrintTrait;
-    use starknet::StorageAccess;
     use traits::PartialOrd;
     use integer::U256PartialOrd;
     use integer::u256;
-
-    use starknet::SyscallResult;
+    use integer::u128_try_from_felt252;
 
     use dict::Felt252Dict;
     use serde::Serde;
@@ -20,8 +18,14 @@ mod Account {
     use starknet::ContractAddress;
     use starknet::contract_address::ContractAddressSerde;
 
-
-    // use starknet::get_execution_info;
+    use traits::Into;
+    use traits::TryInto;
+    use starknet::StorageAccess;
+    use starknet::StorageBaseAddress;
+    use starknet::SyscallResult;
+    use starknet::storage_read_syscall;
+    use starknet::storage_write_syscall;
+    use starknet::storage_address_from_base_and_offset;
     use starknet::get_caller_address;
     use starknet::get_contract_address;
     use starknet::get_tx_info;
@@ -51,23 +55,95 @@ mod Account {
         }
     }
 
+    #[derive(Drop, Serde)]
+    struct Participant {
+        public_key: felt252,
+        nonce: u128,
+        balance: u128
+    }
+
+    impl ParticipantStorageAccess of StorageAccess::<Participant> {
+        fn read(address_domain: u32, base: StorageBaseAddress) -> SyscallResult::<Participant> {
+            Result::Ok(
+                Participant {
+                    public_key: storage_read_syscall(
+                        address_domain, storage_address_from_base_and_offset(base, 0_u8)
+                    )?,
+                    nonce: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 1_u8)
+                        )?
+                    ).unwrap(),
+                    balance: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 1_u8)
+                        )?
+                    ).unwrap(),
+                }
+            )
+        }
+
+        fn write(
+            address_domain: u32, base: StorageBaseAddress, value: Participant
+        ) -> SyscallResult::<()> {
+            storage_write_syscall(
+                address_domain, storage_address_from_base_and_offset(base, 0_u8), value.public_key
+            );
+            storage_write_syscall(
+                address_domain, storage_address_from_base_and_offset(base, 1_u8), value.nonce.into()
+            );
+            storage_write_syscall(
+                address_domain,
+                storage_address_from_base_and_offset(base, 2_u8),
+                value.balance.into()
+            )
+        }
+    }
+
+
+    // setup proxying
+    // see how to deploy the ERC20 and the contract (or change owner)
+    // example transaction that does trading
 
     struct Storage {
         s_public_key: felt252,
+        // s_erc20_address: felt252,
         // public_key, nonce and balance like this for now
         // as I don't have docs for the StorageAccess 
         s_pk_map: LegacyMap<ContractAddress, felt252>,
         s_nonce_map: LegacyMap<ContractAddress, u256>,
         s_balance_map: LegacyMap<ContractAddress, u256>,
+        s_contract_whitelist_map: LegacyMap<ContractAddress, bool>,
         contract_balance: u256,
     }
 
     #[constructor]
     fn constructor(_public_key: felt252) {
         s_public_key::write(_public_key);
+        // s_erc20_address::write(_erc20_address);
         // we mint a balance of 10 million tokens to the contract
         contract_balance::write(u256 { low: 10000000_u128, high: 0_u128 });
     }
+
+    #[external]
+    fn contract_address() -> ContractAddress {
+        get_contract_address()
+    }
+
+    #[external]
+    fn add_to_contract_whitelist(contract_address: ContractAddress) -> bool {
+        assert_only_self();
+        s_contract_whitelist_map::write(contract_address, true);
+        true
+    }
+
+    #[external]
+    fn remove_from_contract_whitelist(contract_address: ContractAddress) -> bool {
+        assert_only_self();
+        s_contract_whitelist_map::write(contract_address, false);
+        true
+    }
+
 
     #[external]
     fn register_participant() {
@@ -151,6 +227,10 @@ mod Account {
         assert(self == caller, 'Account: unauthorized.');
     }
 
+    fn is_whitelisted(contract_address: ContractAddress) -> bool {
+        s_contract_whitelist_map::read(contract_address)
+    }
+
     fn assert_valid_transaction() {
         let tx_info = get_tx_info().unbox();
         let tx_hash = tx_info.transaction_hash;
@@ -195,12 +275,4 @@ mod Account {
         deserialize_array(ref serialized, curr_output, remaining - 1)
     }
 }
-//https://docs.starknet.io/documentation/architecture_and_concepts/Contracts/system-calls-cairo1/
-
-// create an AA wallet that allows anyone to use the funds in the contract.Bye
-
-// they have a sort of session key - only can spend so much in x amount of time.Bye
-
-// every action they do can only be going from the contract - to designated contracts (aave etc).
-
 
