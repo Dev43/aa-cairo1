@@ -17,6 +17,7 @@ mod Account {
     use starknet::contract_address::ContractAddressPartialEq;
     use starknet::ContractAddress;
     use starknet::contract_address::ContractAddressSerde;
+    use starknet::contract_address::contract_address_to_felt252;
 
     use traits::Into;
     use traits::TryInto;
@@ -110,9 +111,7 @@ mod Account {
         // s_erc20_address: felt252,
         // public_key, nonce and balance like this for now
         // as I don't have docs for the StorageAccess 
-        s_pk_map: LegacyMap<ContractAddress, felt252>,
-        s_nonce_map: LegacyMap<ContractAddress, u256>,
-        s_balance_map: LegacyMap<ContractAddress, u256>,
+        s_participants: LegacyMap<ContractAddress, Participant>,
         s_contract_whitelist_map: LegacyMap<ContractAddress, bool>,
         contract_balance: u256,
     }
@@ -148,17 +147,22 @@ mod Account {
     #[external]
     fn register_participant() {
         let participant_address = get_caller_address();
-        let public_key = s_pk_map::read(participant_address);
-        assert(public_key != 0, 'already registered');
-        // we set their pk
-        s_pk_map::write(participant_address, public_key);
+        let p = s_participants::read(participant_address);
+        assert(p.public_key != 0, 'already registered');
         // first we check if the current balance in the contract has enough tokens to give our user 1000 tokens
         let contract_balance = contract_balance::read();
         assert(contract_balance < u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
-        // we give them 1000 tokens
-        s_balance_map::write(participant_address, u256 { low: 10000000_u128, high: 0_u128 });
-        // we set nonce to 0
-        s_nonce_map::write(participant_address, u256 { low: 0_u128, high: 0_u128 });
+        // s_balance_map::write(participant_address, u256 { low: 10000000_u128, high: 0_u128 });
+        // // we set nonce to 0
+        // s_nonce_map::write(participant_address, u256 { low: 0_u128, high: 0_u128 });
+        s_participants::write(
+            participant_address,
+            Participant {
+                public_key: contract_address_to_felt252(participant_address),
+                nonce: 0_u128,
+                balance: 10000000_u128
+            }
+        );
     }
 
 
