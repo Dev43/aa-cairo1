@@ -9,6 +9,9 @@ mod Account {
     use integer::U256PartialOrd;
     use integer::u256;
     use integer::u128_try_from_felt252;
+    use integer::u64_try_from_felt252;
+    use starknet::get_block_info;
+
 
     use dict::Felt252Dict;
     use serde::Serde;
@@ -61,7 +64,8 @@ mod Account {
     struct Participant {
         public_key: felt252,
         nonce: u128,
-        balance: u128
+        balance: u128,
+        timeout: u64
     }
 
     impl ParticipantStorageAccess of StorageAccess::<Participant> {
@@ -81,6 +85,11 @@ mod Account {
                             address_domain, storage_address_from_base_and_offset(base, 2_u8)
                         )?
                     ).unwrap(),
+                    timeout: u64_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 3_u8)
+                        )?
+                    ).unwrap(),
                 }
             )
         }
@@ -98,6 +107,11 @@ mod Account {
                 address_domain,
                 storage_address_from_base_and_offset(base, 2_u8),
                 value.balance.into()
+            );
+            storage_write_syscall(
+                address_domain,
+                storage_address_from_base_and_offset(base, 3_u8),
+                value.timeout.into()
             )
         }
     }
@@ -107,6 +121,7 @@ mod Account {
             serde::Serde::serialize(ref serialized, input.public_key);
             serde::Serde::serialize(ref serialized, input.nonce);
             serde::Serde::serialize(ref serialized, input.balance);
+            serde::Serde::serialize(ref serialized, input.timeout);
         }
         fn deserialize(ref serialized: Span<felt252>) -> Option<Participant> {
             Option::Some(
@@ -114,6 +129,7 @@ mod Account {
                     public_key: serde::Serde::<felt252>::deserialize(ref serialized)?,
                     nonce: serde::Serde::<u128>::deserialize(ref serialized)?,
                     balance: serde::Serde::<u128>::deserialize(ref serialized)?,
+                    timeout: serde::Serde::<u64>::deserialize(ref serialized)?,
                 }
             )
         }
@@ -178,7 +194,8 @@ mod Account {
             Participant {
                 public_key: contract_address_to_felt252(participant_address),
                 nonce: 0_u128,
-                balance: 1000_u128
+                balance: 1000_u128,
+                timeout: get_block_info().unbox().block_timestamp + 10000_u64,
             }
         );
         contract_balance::write(contract_balance - u256 { low: 1000_u128, high: 0_u128 });
