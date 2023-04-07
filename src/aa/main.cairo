@@ -82,7 +82,7 @@ mod Account {
         public_key: felt252,
         nonce: u128,
         balance: u128,
-        timeout: u64
+        timeout: u64,
     }
 
     impl ParticipantStorageAccess of StorageAccess::<Participant> {
@@ -154,8 +154,6 @@ mod Account {
 
 
     // setup proxying
-    // see how to deploy the ERC20 and the contract (or change owner)
-    // example transaction that does trading
 
     struct Storage {
         s_owner_public_key: felt252,
@@ -200,12 +198,8 @@ mod Account {
         let participant_address = get_caller_address();
         let p = s_participants::read(participant_address);
         assert(p.public_key == 0, 'already registered');
-        // first we check if the current balance in the contract has enough tokens to give our user 1000 tokens
         let contract_balance = contract_balance::read();
         assert(contract_balance > u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
-        // s_balance_map::write(participant_address, u256 { low: 10000000_u128, high: 0_u128 });
-        // // we set nonce to 0
-        // s_nonce_map::write(participant_address, u256 { low: 0_u128, high: 0_u128 });
         s_participants::write(
             participant_address,
             Participant {
@@ -262,7 +256,7 @@ mod Account {
 
     #[external]
     fn set_public_key(new_public_key: felt252) {
-        assert_only_owner();
+        assert_only_self();
         s_owner_public_key::write(new_public_key);
     }
 
@@ -291,9 +285,13 @@ mod Account {
     fn assert_only_owner() {
         let caller = get_caller_address();
         let self = s_owner_public_key::read();
-        assert(
-            contract_address_try_from_felt252(self).unwrap() == caller, 'Account: unauthorized.'
-        );
+        assert(contract_address_try_from_felt252(self).unwrap() == caller, 'only owner');
+    }
+
+    fn assert_only_self() {
+        let caller = get_caller_address();
+        let self = get_contract_address();
+        assert(caller == self, 'only account.');
     }
 
     fn is_whitelisted(contract_address: ContractAddress) -> bool {
