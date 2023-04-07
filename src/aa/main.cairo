@@ -35,6 +35,23 @@ mod Account {
     use starknet::get_contract_address;
     use starknet::get_tx_info;
 
+    #[abi]
+    trait IERC20 {
+        #[view]
+        fn balance_of(account: ContractAddress) -> u256;
+        #[view]
+        fn allowance(owner: ContractAddress, spender: ContractAddress) -> u256;
+        #[external]
+        fn mint(recipient: ContractAddress, amount: u256);
+        #[external]
+        fn transfer(recipient: ContractAddress, amount: u256) -> bool;
+        #[external]
+        fn transfer_from(sender: ContractAddress, recipient: ContractAddress, amount: u256) -> bool;
+        #[external]
+        fn approve(spender: ContractAddress, amount: u256) -> bool;
+    }
+
+
     #[derive(Drop)]
     struct AccountCall {
         to: ContractAddress,
@@ -141,7 +158,7 @@ mod Account {
     // example transaction that does trading
 
     struct Storage {
-        s_public_key: felt252,
+        s_owner_public_key: felt252,
         // s_erc20_address: felt252,
         // public_key, nonce and balance like this for now
         // as I don't have docs for the StorageAccess 
@@ -152,7 +169,7 @@ mod Account {
 
     #[constructor]
     fn constructor(_public_key: felt252) {
-        s_public_key::write(_public_key);
+        s_owner_public_key::write(_public_key);
         // s_erc20_address::write(_erc20_address);
         // we mint a balance of 10 million tokens to the contract
         contract_balance::write(u256 { low: 10000000_u128, high: 0_u128 });
@@ -165,14 +182,14 @@ mod Account {
 
     #[external]
     fn add_to_contract_whitelist(contract_address: ContractAddress) -> bool {
-        assert_only_self();
+        assert_only_owner();
         s_contract_whitelist_map::write(contract_address, true);
         true
     }
 
     #[external]
     fn remove_from_contract_whitelist(contract_address: ContractAddress) -> bool {
-        assert_only_self();
+        assert_only_owner();
         s_contract_whitelist_map::write(contract_address, false);
         true
     }
@@ -245,13 +262,13 @@ mod Account {
 
     #[external]
     fn set_public_key(new_public_key: felt252) {
-        assert_only_self();
-        s_public_key::write(new_public_key);
+        assert_only_owner();
+        s_owner_public_key::write(new_public_key);
     }
 
     #[view]
     fn get_public_key() -> felt252 {
-        s_public_key::read()
+        s_owner_public_key::read()
     }
 
     #[view]
@@ -261,7 +278,7 @@ mod Account {
 
     #[view]
     fn is_valid_signature(message: felt252, sig_r: felt252, sig_s: felt252) -> bool {
-        let _public_key: felt252 = s_public_key::read();
+        let _public_key: felt252 = s_owner_public_key::read();
         check_ecdsa_signature(message, _public_key, sig_r, sig_s)
     }
 
@@ -271,10 +288,12 @@ mod Account {
     }
 
     // Internals
-    fn assert_only_self() {
+    fn assert_only_owner() {
         let caller = get_caller_address();
-        let self = get_contract_address();
-        assert(self == caller, 'Account: unauthorized.');
+        let self = s_owner_public_key::read();
+        assert(
+            contract_address_try_from_felt252(self).unwrap() == caller, 'Account: unauthorized.'
+        );
     }
 
     fn is_whitelisted(contract_address: ContractAddress) -> bool {
