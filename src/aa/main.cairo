@@ -38,6 +38,8 @@ mod Account {
     use aa::types::AccountCall;
     use aa::types::AccountCallSerde;
     use aa::types::IERC20;
+    use aa::types::IERC20Dispatcher;
+    use aa::types::IERC20DispatcherTrait;
     use aa::types::Participant;
     use aa::types::ParticipantStorageAccess;
 
@@ -120,10 +122,11 @@ mod Account {
         s_participants::write(
             participant_address,
             Participant {
-                public_key: contract_address_to_felt252(participant_address),
-                nonce: 0_u128,
-                balance: 1000_u128,
-                timeout: get_block_info().unbox().block_timestamp + 10000_u64,
+                public_key: contract_address_to_felt252(participant_address), nonce: u256 {
+                    low: 0_u128, high: 0_u128
+                    }, balance: u256 {
+                    low: 1000_u128, high: 0_u128
+                }, timeout: get_block_info().unbox().block_timestamp + 10000_u64,
             }
         );
         // only here to be able to run cairo tests, this would not be in production
@@ -136,8 +139,36 @@ mod Account {
     #[external]
     fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Array::<felt252>> {
         assert_valid_transaction();
-        let mut res = ArrayTrait::new();
-        _execute_calls(calls, res)
+        let public_key = contract_address_to_felt252(get_caller_address());
+
+        if !is_owner(
+            public_key
+        ) {
+            let token = IERC20Dispatcher { contract_address: s_erc20_address::read() };
+            let balance = token.balance_of(get_contract_address());
+            let p = s_participants::read(get_caller_address());
+            let participant_balance = p.balance;
+            let mut res = ArrayTrait::new();
+            let response = _execute_calls(calls, res);
+
+            let new_balance = token.balance_of(get_contract_address());
+            let spent = balance - new_balance;
+            assert(spent >= participant_balance, 'drew too much');
+
+            s_participants::write(
+                get_caller_address(),
+                Participant {
+                    public_key: contract_address_to_felt252(get_caller_address()),
+                    nonce: p.nonce + u256 {
+                        low: 1_u128, high: 0_u128
+                    }, balance: participant_balance - spent, timeout: p.timeout,
+                }
+            );
+            return response;
+        } else {
+            let mut res = ArrayTrait::new();
+            _execute_calls(calls, res)
+        }
     }
 
     fn _execute_calls(
@@ -226,25 +257,39 @@ mod Account {
 
         let caller = get_caller_address();
 
-        let p = s_participants::read(caller);
-        // we ensure this user is registered
-        assert(p.public_key != 0, 'not registered');
-        // TODO time limit
-        // assert(p.timeout != 0, 'timedout');
+        // here we check if the caller is the owner of the contract. If not, we check if the caller is a participant
+        let mut public_key = s_owner_public_key::read();
+
+        if !is_owner(
+            public_key
+        ) {
+            let p = s_participants::read(caller);
+            // we ensure this user is registered
+            assert(p.public_key != 0, 'not registered');
+            // TODO time limit
+            // assert(p.timeout != 0, 'timedout');
+            public_key = p.public_key;
+        }
 
         assert(signature.len() == 2_u32, 'bad signature length');
 
         let is_valid = is_valid_signature(
-            tx_hash, p.public_key, *signature.at(0_u32), *signature.at(1_u32)
+            tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32)
         );
 
         assert(is_valid, 'Invalid signature.');
     }
 
     fn _call_contract(call: AccountCall) -> Span::<felt252> {
+        assert(is_whitelisted(call.to), 'contract not whitelisted');
         starknet::call_contract_syscall(
             call.to, call.selector, call.calldata.span()
         ).unwrap_syscall()
+    }
+
+    fn is_owner(public_key: felt252) -> bool {
+        let owner = s_owner_public_key::read();
+        return owner == public_key;
     }
 
 

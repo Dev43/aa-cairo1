@@ -6,6 +6,7 @@ use traits::TryInto;
 
 use integer::u256;
 use integer::u128_try_from_felt252;
+use integer::u256_from_felt252;
 use integer::u64_try_from_felt252;
 
 use serde::Serde;
@@ -67,8 +68,8 @@ impl AccountCallSerde of serde::Serde::<AccountCall> {
 #[derive(Drop, Serde)]
 struct Participant {
     public_key: felt252,
-    nonce: u128,
-    balance: u128,
+    nonce: u256,
+    balance: u256,
     timeout: u64,
 }
 
@@ -79,19 +80,32 @@ impl ParticipantStorageAccess of StorageAccess::<Participant> {
                 public_key: storage_read_syscall(
                     address_domain, storage_address_from_base_and_offset(base, 0_u8)
                 )?,
-                nonce: u128_try_from_felt252(
-                    storage_read_syscall(
-                        address_domain, storage_address_from_base_and_offset(base, 1_u8)
-                    )?
-                ).unwrap(),
-                balance: u128_try_from_felt252(
-                    storage_read_syscall(
-                        address_domain, storage_address_from_base_and_offset(base, 2_u8)
-                    )?
-                ).unwrap(),
+                nonce: u256 {
+                    high: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 1_u8)
+                        )?
+                    ).unwrap(),
+                    low: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 2_u8)
+                        )?
+                    ).unwrap(),
+                    }, balance: u256 {
+                    high: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 3_u8)
+                        )?
+                    ).unwrap(),
+                    low: u128_try_from_felt252(
+                        storage_read_syscall(
+                            address_domain, storage_address_from_base_and_offset(base, 4_u8)
+                        )?
+                    ).unwrap(),
+                },
                 timeout: u64_try_from_felt252(
                     storage_read_syscall(
-                        address_domain, storage_address_from_base_and_offset(base, 3_u8)
+                        address_domain, storage_address_from_base_and_offset(base, 5_u8)
                     )?
                 ).unwrap(),
             }
@@ -105,13 +119,25 @@ impl ParticipantStorageAccess of StorageAccess::<Participant> {
             address_domain, storage_address_from_base_and_offset(base, 0_u8), value.public_key
         );
         storage_write_syscall(
-            address_domain, storage_address_from_base_and_offset(base, 1_u8), value.nonce.into()
+            address_domain,
+            storage_address_from_base_and_offset(base, 1_u8),
+            value.nonce.high.into()
         );
         storage_write_syscall(
-            address_domain, storage_address_from_base_and_offset(base, 2_u8), value.balance.into()
+            address_domain, storage_address_from_base_and_offset(base, 2_u8), value.nonce.low.into()
         );
         storage_write_syscall(
-            address_domain, storage_address_from_base_and_offset(base, 3_u8), value.timeout.into()
+            address_domain,
+            storage_address_from_base_and_offset(base, 3_u8),
+            value.balance.high.into()
+        );
+        storage_write_syscall(
+            address_domain,
+            storage_address_from_base_and_offset(base, 4_u8),
+            value.balance.low.into()
+        );
+        storage_write_syscall(
+            address_domain, storage_address_from_base_and_offset(base, 5_u8), value.timeout.into()
         )
     }
 }
@@ -127,8 +153,8 @@ impl ParticipantSerde of serde::Serde::<Participant> {
         Option::Some(
             Participant {
                 public_key: serde::Serde::<felt252>::deserialize(ref serialized)?,
-                nonce: serde::Serde::<u128>::deserialize(ref serialized)?,
-                balance: serde::Serde::<u128>::deserialize(ref serialized)?,
+                nonce: serde::Serde::<u256>::deserialize(ref serialized)?,
+                balance: serde::Serde::<u256>::deserialize(ref serialized)?,
                 timeout: serde::Serde::<u64>::deserialize(ref serialized)?,
             }
         )
