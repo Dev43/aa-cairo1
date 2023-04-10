@@ -23,7 +23,7 @@ check-format:
 
 starknet-compile:
 	mkdir -p artifacts && \
-		cargo run --bin starknet-compile -- ${dir} artifacts/$(shell basename $(dir)).json --allowed-libfuncs-list-name experimental_v0.1.0
+		cargo run --bin starknet-compile -- ${SOURCE_FOLDER}/main.cairo artifacts/$(shell basename $(SOURCE_FOLDER)).json --allowed-libfuncs-list-name experimental_v0.1.0
 
 language-server:
 	cargo build --bin cairo-language-server --release
