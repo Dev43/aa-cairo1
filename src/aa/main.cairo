@@ -5,35 +5,45 @@ mod Account {
     use option::OptionTrait;
     use dict::Felt252DictTrait;
     use debug::PrintTrait;
+    use traits::Into;
+    use traits::TryInto;
     use traits::PartialOrd;
+    use box::BoxTrait;
+
     use integer::U256PartialOrd;
     use integer::u256;
     use integer::u128_try_from_felt252;
     use integer::u64_try_from_felt252;
-    use starknet::get_block_info;
-
 
     use dict::Felt252Dict;
+
     use serde::Serde;
-    use box::BoxTrait;
+
     use ecdsa::check_ecdsa_signature;
+
     use starknet::contract_address::ContractAddressPartialEq;
     use starknet::ContractAddress;
     use starknet::contract_address::ContractAddressSerde;
     use starknet::contract_address::contract_address_to_felt252;
     use starknet::contract_address::contract_address_try_from_felt252;
-
-    use traits::Into;
-    use traits::TryInto;
+    use starknet::class_hash::ClassHash;
+    use starknet::class_hash::Felt252TryIntoClassHash;
     use starknet::StorageAccess;
     use starknet::StorageBaseAddress;
     use starknet::SyscallResult;
     use starknet::storage_read_syscall;
     use starknet::storage_write_syscall;
+    use starknet::syscalls::deploy_syscall;
     use starknet::storage_address_from_base_and_offset;
+
+    use starknet::get_block_info;
     use starknet::get_caller_address;
     use starknet::get_contract_address;
     use starknet::get_tx_info;
+
+
+    #[event]
+    fn token_deployed(token_address: ContractAddress) {}
 
     #[abi]
     trait IERC20 {
@@ -49,6 +59,28 @@ mod Account {
         fn transfer_from(sender: ContractAddress, recipient: ContractAddress, amount: u256) -> bool;
         #[external]
         fn approve(spender: ContractAddress, amount: u256) -> bool;
+    }
+
+    // first we need to deploy the class hash of the token
+    fn deploy_token(
+        token_class: felt252,
+        name_: felt252,
+        symbol_: felt252,
+        initial_supply: u256,
+        recipient: felt252
+    ) -> ContractAddress {
+        let caller = get_caller_address();
+        let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
+        constructor_calldata.append(name_);
+        constructor_calldata.append(symbol_);
+        constructor_calldata.append(initial_supply.low.into());
+        constructor_calldata.append(initial_supply.high.into());
+        constructor_calldata.append(recipient);
+        let class_hash: ClassHash = token_class.try_into().unwrap();
+        let result = deploy_syscall(class_hash, 42, constructor_calldata.span(), true);
+        let (token_address, _) = result.unwrap_syscall();
+        token_deployed(token_address);
+        token_address
     }
 
 
@@ -155,25 +187,27 @@ mod Account {
         }
     }
 
-
-    // setup proxying
-
     struct Storage {
         s_owner_public_key: felt252,
-        // s_erc20_address: felt252,
-        // public_key, nonce and balance like this for now
-        // as I don't have docs for the StorageAccess 
+        s_erc20_address: ContractAddress,
         s_participants: LegacyMap<ContractAddress, Participant>,
         s_contract_whitelist_map: LegacyMap<ContractAddress, bool>,
         contract_balance: u256,
     }
 
     #[constructor]
-    fn constructor(_public_key: felt252) {
+    fn constructor(
+        _public_key: felt252,
+        token_class: felt252,
+        name_: felt252,
+        symbol_: felt252,
+        initial_supply: u256,
+        recipient: felt252
+    ) {
         s_owner_public_key::write(_public_key);
-        // s_erc20_address::write(_erc20_address);
-        // we mint a balance of 10 million tokens to the contract
-        contract_balance::write(u256 { low: 10000000_u128, high: 0_u128 });
+        let token_address = deploy_token(token_class, name_, symbol_, initial_supply, recipient);
+        s_erc20_address::write(token_address);
+        contract_balance::write(u256 { low: initial_supply.low, high: initial_supply.high });
     }
 
     #[external]
@@ -201,6 +235,7 @@ mod Account {
         let participant_address = get_caller_address();
         let p = s_participants::read(participant_address);
         assert(p.public_key == 0, 'already registered');
+        // TODO assign some tokens to this person
         let contract_balance = contract_balance::read();
         assert(contract_balance > u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
         s_participants::write(
