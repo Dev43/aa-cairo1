@@ -69,13 +69,14 @@ mod Account {
         _initial_supply: u256,
         _recipient: felt252
     ) {
-        let caller = get_caller_address();
+        let contract_address = get_contract_address();
         let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
         constructor_calldata.append(_name);
         constructor_calldata.append(_symbol);
         constructor_calldata.append(_initial_supply.low.into());
         constructor_calldata.append(_initial_supply.high.into());
-        constructor_calldata.append(_recipient);
+        // we mint the tokens to the contract
+        constructor_calldata.append(contract_address_to_felt252(contract_address));
         let class_hash: ClassHash = _token_class.try_into().unwrap();
         let result = deploy_syscall(class_hash, 420, constructor_calldata.span(), true);
         let (token_address, _) = result.unwrap_syscall();
