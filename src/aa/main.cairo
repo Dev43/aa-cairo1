@@ -61,28 +61,6 @@ mod Account {
         fn approve(spender: ContractAddress, amount: u256) -> bool;
     }
 
-    // first we need to deploy the class hash of the token
-    fn deploy_token(
-        token_class: felt252,
-        name_: felt252,
-        symbol_: felt252,
-        initial_supply: u256,
-        recipient: felt252
-    ) -> ContractAddress {
-        let caller = get_caller_address();
-        let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
-        constructor_calldata.append(name_);
-        constructor_calldata.append(symbol_);
-        constructor_calldata.append(initial_supply.low.into());
-        constructor_calldata.append(initial_supply.high.into());
-        constructor_calldata.append(recipient);
-        let class_hash: ClassHash = token_class.try_into().unwrap();
-        let result = deploy_syscall(class_hash, 42, constructor_calldata.span(), true);
-        let (token_address, _) = result.unwrap_syscall();
-        token_deployed(token_address);
-        token_address
-    }
-
 
     #[derive(Drop)]
     struct AccountCall {
@@ -189,26 +167,43 @@ mod Account {
 
     struct Storage {
         s_owner_public_key: felt252,
-        s_erc20_address: ContractAddress,
         s_participants: LegacyMap<ContractAddress, Participant>,
         s_contract_whitelist_map: LegacyMap<ContractAddress, bool>,
-        contract_balance: u256,
+        s_erc20_address: ContractAddress,
+        s_contract_balance: u256,
+        s_is_test: bool,
     }
 
     #[constructor]
-    fn constructor(
-        _public_key: felt252,
-        token_class: felt252,
-        name_: felt252,
-        symbol_: felt252,
-        initial_supply: u256,
-        recipient: felt252
-    ) {
+    fn constructor(_public_key: felt252, _is_test: bool, ) {
         s_owner_public_key::write(_public_key);
-        let token_address = deploy_token(token_class, name_, symbol_, initial_supply, recipient);
-        s_erc20_address::write(token_address);
-        contract_balance::write(u256 { low: initial_supply.low, high: initial_supply.high });
+        s_is_test::write(true);
     }
+
+    // first we need to deploy the class hash of the token
+    #[external]
+    fn initialize(
+        _token_class: felt252,
+        _name: felt252,
+        _symbol: felt252,
+        _initial_supply: u256,
+        _recipient: felt252
+    ) {
+        let caller = get_caller_address();
+        let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
+        constructor_calldata.append(_name);
+        constructor_calldata.append(_symbol);
+        constructor_calldata.append(_initial_supply.low.into());
+        constructor_calldata.append(_initial_supply.high.into());
+        constructor_calldata.append(_recipient);
+        let class_hash: ClassHash = _token_class.try_into().unwrap();
+        let result = deploy_syscall(class_hash, 420, constructor_calldata.span(), true);
+        let (token_address, _) = result.unwrap_syscall();
+        s_erc20_address::write(token_address);
+        s_contract_balance::write(u256 { low: _initial_supply.low, high: _initial_supply.high });
+        token_deployed(token_address);
+    }
+
 
     #[external]
     fn contract_address() -> ContractAddress {
@@ -236,8 +231,11 @@ mod Account {
         let p = s_participants::read(participant_address);
         assert(p.public_key == 0, 'already registered');
         // TODO assign some tokens to this person
-        let contract_balance = contract_balance::read();
-        assert(contract_balance > u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
+        let s_contract_balance = s_contract_balance::read();
+        // only here to be able to run cairo tests, this would not be in production
+        if (!s_is_test::read()) {
+            assert(s_contract_balance > u256 { low: 1000_u128, high: 0_u128 }, 'no more tokens');
+        }
         s_participants::write(
             participant_address,
             Participant {
@@ -247,7 +245,10 @@ mod Account {
                 timeout: get_block_info().unbox().block_timestamp + 10000_u64,
             }
         );
-        contract_balance::write(contract_balance - u256 { low: 1000_u128, high: 0_u128 });
+        // only here to be able to run cairo tests, this would not be in production
+        if (!s_is_test::read()) {
+            s_contract_balance::write(s_contract_balance - u256 { low: 1000_u128, high: 0_u128 });
+        }
     }
 
 
@@ -305,7 +306,7 @@ mod Account {
 
     #[view]
     fn balance() -> u256 {
-        contract_balance::read()
+        s_contract_balance::read()
     }
 
     #[view]
