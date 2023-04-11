@@ -23,10 +23,13 @@ check-format:
 
 starknet-compile:
 	mkdir -p artifacts && \
-		cargo run --bin starknet-compile -- ${SOURCE_FOLDER}/main.cairo artifacts/$(shell basename $(SOURCE_FOLDER)).json --allowed-libfuncs-list-name experimental_v0.1.0
+		cargo run --bin starknet-compile -- ${SOURCE_FOLDER}/main.cairo artifacts/$(shell basename $(SOURCE_FOLDER)).json --replace-ids --allowed-libfuncs-list-name experimental_v0.1.0 
 
 starknet-declare:
 	starknet declare --contract artifacts/aa.json --account version_11
+
+starknet-declare-simulate:
+	starknet declare --contract artifacts/aa.json --account version_11 --simulate
 
 language-server:
 	cargo build --bin cairo-language-server --release
