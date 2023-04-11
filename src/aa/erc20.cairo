@@ -15,7 +15,7 @@ trait IERC20 {
 
 #[contract]
 mod ERC20 {
-    use aa::erc20::IERC20;
+    use super::IERC20;
     use starknet::get_caller_address;
     use starknet::ContractAddress;
     use starknet::ContractAddressZeroable;
