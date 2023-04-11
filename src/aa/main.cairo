@@ -71,7 +71,6 @@ mod Account {
         _name: felt252,
         _symbol: felt252,
         _initial_supply: u256,
-        _recipient: felt252
     ) {
         let contract_address = get_contract_address();
         let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
