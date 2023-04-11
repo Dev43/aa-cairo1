@@ -15,6 +15,9 @@ mod Account {
     use integer::u128_try_from_felt252;
     use integer::u64_try_from_felt252;
 
+    use array::array_append;
+    use array::array_new;
+
     use dict::Felt252Dict;
 
     use serde::Serde;
@@ -41,8 +44,6 @@ mod Account {
     use starknet::storage_read_syscall;
     use starknet::storage_write_syscall;
     use starknet::storage_address_from_base_and_offset;
-
-
 
 
     #[event]
@@ -173,15 +174,26 @@ mod Account {
         }
     }
 
+
     fn _execute_calls(
         mut calls: Array<AccountCall>, mut res: Array::<Array::<felt252>>
     ) -> Array::<Array::<felt252>> {
+        match gas::withdraw_gas() {
+            Option::Some(_) => {},
+            Option::None(_) => {
+                let mut data = ArrayTrait::new();
+                data.append('Out of gas');
+                panic(data)
+            },
+        }
         match calls.pop_front() {
             Option::Some(call) => {
                 let mut _res = _call_contract(call);
-                let r = convert_span_to_array(_res);
-                res.append(r);
-                return _execute_calls(calls, res);
+                let new_res: Array<felt252> = convert_span_to_array(ref _res);
+                res.append(new_res);
+                return res;
+                // cannot have more than 1 call as we will reach a recursion error
+                // return _execute_calls(calls, res);
             },
             Option::None(_) => {
                 return res;
@@ -189,6 +201,13 @@ mod Account {
         }
     }
 
+    fn convert_span_to_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
+        ref serialized: Span<felt252>
+    ) -> Array<T> {
+        let mut arr = ArrayTrait::new();
+        arr.append(TSerde::deserialize(ref serialized).unwrap());
+        arr
+    }
 
     #[external]
     fn __validate__(calls: Array::<AccountCall>) {
@@ -295,33 +314,8 @@ mod Account {
     }
 
 
-    fn convert_span_to_array(mut span: Span<felt252>) -> Array<felt252> {
-        let length = *span.pop_front().unwrap();
-        let mut arr = ArrayTrait::new();
-        deserialize_array(ref span, arr, length).unwrap()
-    }
-
-    // taken from the corelib
-    fn deserialize_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
-        ref serialized: Span<felt252>, mut curr_output: Array<T>, remaining: felt252
-    ) -> Option<Array<T>> {
-        match gas::withdraw_gas() {
-            Option::Some(_) => {},
-            Option::None(_) => {
-                let mut data = ArrayTrait::new();
-                data.append('Out of gas');
-                panic(data);
-            },
-        }
-        if remaining == 0 {
-            return Option::Some(curr_output);
-        }
-        curr_output.append(TSerde::deserialize(ref serialized)?);
-        deserialize_array(ref serialized, curr_output, remaining - 1)
-    }
-
     // types
-        #[abi]
+    #[abi]
     trait IERC20 {
         #[view]
         fn balance_of(account: ContractAddress) -> u256;
@@ -366,7 +360,7 @@ mod Account {
         }
     }
 
-    #[derive(Drop, Serde)]
+    #[derive(Drop)]
     struct Participant {
         public_key: felt252,
         nonce: u256,
