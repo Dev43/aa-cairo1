@@ -30,3 +30,8 @@ starknet-declare:
 
 language-server:
 	cargo build --bin cairo-language-server --release
+
+
+# starknet-compile-deprecated Account.cairo     --output contract_compiled.json     --abi contract_abi.json --cairo_path ../cairo-lang/src/ --account_contract
+# starknet declare --contract contract_compiled.json --account braavos --deprecated
+# starknet deploy_account --account version_11
