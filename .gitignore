@@ -1,3 +1,4 @@
 target/
 corelib/
 todo*
+settings.json
