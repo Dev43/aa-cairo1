@@ -156,8 +156,7 @@ mod Account {
             s_participants::write(
                 get_caller_address(),
                 Participant {
-                    public_key: p.public_key,
-                    nonce: p.nonce + u256 {
+                    public_key: p.public_key, nonce: p.nonce + u256 {
                         low: 1_u128, high: 0_u128
                     }, balance: participant_balance - spent, timeout: p.timeout,
                 }
@@ -206,7 +205,7 @@ mod Account {
     }
 
     #[external]
-    fn set_owner_addresses(new_address:ContractAddress, new_public_key: felt252) {
+    fn set_owner_addresses(new_address: ContractAddress, new_public_key: felt252) {
         assert_only_owner();
         s_owner_address::write(new_address);
         s_owner_public_key::write(new_public_key);
@@ -286,7 +285,6 @@ mod Account {
         let is_valid = is_valid_signature(
             tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32)
         );
-
     // problem validating the and here
     // assert(is_valid, 'Invalid signature.');
     }
