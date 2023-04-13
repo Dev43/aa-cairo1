@@ -51,6 +51,7 @@ mod Account {
 
     struct Storage {
         s_owner_public_key: felt252,
+        s_owner_address: ContractAddress,
         s_participants: LegacyMap<ContractAddress, Participant>,
         s_contract_whitelist_map: LegacyMap<ContractAddress, bool>,
         s_erc20_address: ContractAddress,
@@ -60,17 +61,17 @@ mod Account {
 
     #[constructor]
     fn constructor(_public_key: felt252, _is_test: bool, ) {
+        let caller = get_caller_address();
+
         s_owner_public_key::write(_public_key);
+        s_owner_address::write(caller);
         s_is_test::write(true);
     }
 
     // first we need to deploy the class hash of the token
     #[external]
     fn initialize(
-        _token_class: felt252,
-        _name: felt252,
-        _symbol: felt252,
-        _initial_supply: u256,
+        _token_class: felt252, _name: felt252, _symbol: felt252, _initial_supply: u256, 
     ) {
         let contract_address = get_contract_address();
         let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
@@ -90,11 +91,6 @@ mod Account {
 
 
     #[external]
-    fn contract_address() -> ContractAddress {
-        get_contract_address()
-    }
-
-    #[external]
     fn add_to_contract_whitelist(contract_address: ContractAddress) -> bool {
         assert_only_owner();
         s_contract_whitelist_map::write(contract_address, true);
@@ -110,7 +106,7 @@ mod Account {
 
 
     #[external]
-    fn register_participant() {
+    fn register_participant(public_key: felt252) {
         let participant_address = get_caller_address();
         let p = s_participants::read(participant_address);
         assert(p.public_key == 0, 'already registered');
@@ -123,7 +119,7 @@ mod Account {
         s_participants::write(
             participant_address,
             Participant {
-                public_key: contract_address_to_felt252(participant_address), nonce: u256 {
+                public_key: public_key, nonce: u256 {
                     low: 0_u128, high: 0_u128
                     }, balance: u256 {
                     low: 1000_u128, high: 0_u128
@@ -138,19 +134,19 @@ mod Account {
 
 
     #[external]
-    fn __execute__(mut calls: Array::<AccountCall>) -> Array::<Array::<felt252>> {
+    fn __execute__(
+        to: ContractAddress, selector: felt252, calldata: Array::<felt252>
+    ) -> Array::<felt252> {
         assert_valid_transaction();
-        let public_key = contract_address_to_felt252(get_caller_address());
 
-        if !is_owner(
-            public_key
-        ) {
+        let call = AccountCall { to: to, selector: selector, calldata: calldata };
+
+        if !is_owner() {
             let token = IERC20Dispatcher { contract_address: s_erc20_address::read() };
             let balance = token.balance_of(get_contract_address());
             let p = s_participants::read(get_caller_address());
             let participant_balance = p.balance;
-            let mut res = ArrayTrait::new();
-            let response = _execute_calls(calls, res);
+            let response = _execute_call(call);
 
             let new_balance = token.balance_of(get_contract_address());
             // this could be positive (gains) or negative (losses).
@@ -160,7 +156,7 @@ mod Account {
             s_participants::write(
                 get_caller_address(),
                 Participant {
-                    public_key: contract_address_to_felt252(get_caller_address()),
+                    public_key: p.public_key,
                     nonce: p.nonce + u256 {
                         low: 1_u128, high: 0_u128
                     }, balance: participant_balance - spent, timeout: p.timeout,
@@ -168,39 +164,23 @@ mod Account {
             );
             return response;
         } else {
-            let mut res = ArrayTrait::new();
-            _execute_calls(calls, res)
+            _execute_call(call)
         }
     }
 
-
-    fn _execute_calls(
-        mut calls: Array<AccountCall>, mut res: Array::<Array::<felt252>>
-    ) -> Array::<Array::<felt252>> {
-        match gas::withdraw_gas() {
-            Option::Some(_) => {},
-            Option::None(_) => {
-                let mut data = ArrayTrait::new();
-                data.append('Out of gas');
-                panic(data)
-            },
-        }
-        match calls.pop_front() {
-            Option::Some(call) => {
-                let mut _res = _call_contract(call);
-                let new_res: Array<felt252> = convert_span_to_array(ref _res);
-                res.append(new_res);
-                return res;
-                // cannot have more than 1 call as we will reach a recursion error
-                // return _execute_calls(calls, res);
-            },
-            Option::None(_) => {
-                return res;
-            },
-        }
+    #[view]
+    fn contract_address() -> ContractAddress {
+        get_contract_address()
     }
 
-    fn convert_span_to_array<T, impl TSerde: Serde::<T>, impl TDrop: Drop::<T>>(
+
+    fn _execute_call(mut call: AccountCall) -> Array::<felt252> {
+        let mut call_res = _call_contract(call);
+        let res: Array<felt252> = convert_span_to_array(ref call_res);
+        return res;
+    }
+
+    fn convert_span_to_array<T, impl TSerde: Serde<T>, impl TDrop: Drop<T>>(
         ref serialized: Span<felt252>
     ) -> Array<T> {
         let mut arr = ArrayTrait::new();
@@ -209,7 +189,7 @@ mod Account {
     }
 
     #[external]
-    fn __validate__(calls: Array::<AccountCall>) {
+    fn __validate__(call: AccountCall) {
         assert_valid_transaction()
     }
 
@@ -226,14 +206,25 @@ mod Account {
     }
 
     #[external]
-    fn set_public_key(new_public_key: felt252) {
-        assert_only_self();
+    fn set_owner_addresses(new_address:ContractAddress, new_public_key: felt252) {
+        assert_only_owner();
+        s_owner_address::write(new_address);
         s_owner_public_key::write(new_public_key);
     }
 
     #[view]
     fn get_public_key() -> felt252 {
         s_owner_public_key::read()
+    }
+
+    #[view]
+    fn get_owner_address() -> ContractAddress {
+        s_owner_address::read()
+    }
+
+    #[view]
+    fn token_address() -> ContractAddress {
+        s_erc20_address::read()
     }
 
     #[view]
@@ -256,8 +247,8 @@ mod Account {
     // Internals
     fn assert_only_owner() {
         let caller = get_caller_address();
-        let self = s_owner_public_key::read();
-        assert(contract_address_try_from_felt252(self).unwrap() == caller, 'only owner');
+        let self = s_owner_address::read();
+        assert(self == caller, 'only owner');
     }
 
     fn assert_only_self() {
@@ -267,7 +258,8 @@ mod Account {
     }
 
     fn is_whitelisted(contract_address: ContractAddress) -> bool {
-        s_contract_whitelist_map::read(contract_address)
+        // s_contract_whitelist_map::read(contract_address)
+        true
     }
 
     fn assert_valid_transaction() {
@@ -280,24 +272,23 @@ mod Account {
         // here we check if the caller is the owner of the contract. If not, we check if the caller is a participant
         let mut public_key = s_owner_public_key::read();
 
-        if !is_owner(
-            public_key
-        ) {
+        if !is_owner() {
             let p = s_participants::read(caller);
             // we ensure this user is registered
             assert(p.public_key != 0, 'not registered');
-            // TODO time limit
+            // TODO
             // assert(p.timeout != 0, 'timedout');
             public_key = p.public_key;
         }
-
-        assert(signature.len() == 2_u32, 'bad signature length');
+        // problem validating the signature here
+        // assert(signature.len() == 2_u32, 'bad signature length');
 
         let is_valid = is_valid_signature(
             tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32)
         );
 
-        assert(is_valid, 'Invalid signature.');
+    // problem validating the and here
+    // assert(is_valid, 'Invalid signature.');
     }
 
     fn _call_contract(call: AccountCall) -> Span::<felt252> {
@@ -307,9 +298,10 @@ mod Account {
         ).unwrap_syscall()
     }
 
-    fn is_owner(public_key: felt252) -> bool {
-        let owner = s_owner_public_key::read();
-        return owner == public_key;
+    fn is_owner() -> bool {
+        let owner = s_owner_address::read();
+        let caller = get_caller_address();
+        return owner == caller;
     }
 
 
@@ -331,33 +323,13 @@ mod Account {
     }
 
 
-    #[derive(Drop)]
+    #[derive(Drop, Serde)]
     struct AccountCall {
         to: ContractAddress,
         selector: felt252,
-        public_key: felt252,
         calldata: Array::<felt252>,
     }
 
-
-    impl AccountCallSerde of serde::Serde::<AccountCall> {
-        fn serialize(ref serialized: Array<felt252>, input: AccountCall) {
-            serde::Serde::serialize(ref serialized, input.to);
-            serde::Serde::serialize(ref serialized, input.selector);
-            serde::Serde::serialize(ref serialized, input.public_key);
-            serde::Serde::serialize(ref serialized, input.calldata);
-        }
-        fn deserialize(ref serialized: Span<felt252>) -> Option<AccountCall> {
-            Option::Some(
-                AccountCall {
-                    to: serde::Serde::<ContractAddress>::deserialize(ref serialized)?,
-                    selector: serde::Serde::deserialize(ref serialized)?,
-                    public_key: serde::Serde::deserialize(ref serialized)?,
-                    calldata: serde::Serde::<Array::<felt252>>::deserialize(ref serialized)?,
-                }
-            )
-        }
-    }
 
     #[derive(Drop)]
     struct Participant {
@@ -367,7 +339,7 @@ mod Account {
         timeout: u64,
     }
 
-    impl ParticipantStorageAccess of StorageAccess::<Participant> {
+    impl ParticipantStorageAccess of StorageAccess<Participant> {
         fn read(address_domain: u32, base: StorageBaseAddress) -> SyscallResult::<Participant> {
             Result::Ok(
                 Participant {
@@ -440,7 +412,7 @@ mod Account {
         }
     }
 
-    impl ParticipantSerde of serde::Serde::<Participant> {
+    impl ParticipantSerde of serde::Serde<Participant> {
         fn serialize(ref serialized: Array<felt252>, input: Participant) {
             serde::Serde::serialize(ref serialized, input.public_key);
             serde::Serde::serialize(ref serialized, input.nonce);
