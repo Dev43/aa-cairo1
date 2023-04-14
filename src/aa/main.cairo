@@ -48,6 +48,10 @@ mod Account {
 
     #[event]
     fn token_deployed(token_address: ContractAddress) {}
+    #[event]
+    fn signature_valid(
+        tx_hash: felt252, public_key: felt252, sig_r: felt252, sig_s: felt252, is_valid: bool
+    ) {}
 
     struct Storage {
         s_owner_public_key: felt252,
@@ -145,20 +149,22 @@ mod Account {
             let token = IERC20Dispatcher { contract_address: s_erc20_address::read() };
             let balance = token.balance_of(get_contract_address());
             let p = s_participants::read(get_caller_address());
-            let participant_balance = p.balance;
+            let user_balance = p.balance;
+            let contract_balance_before_call = token.balance_of(get_contract_address());
             let response = _execute_call(call);
 
-            let new_balance = token.balance_of(get_contract_address());
+            let contract_balance_after_call = token.balance_of(get_contract_address());
             // this could be positive (gains) or negative (losses).
-            let spent = balance - new_balance;
-            assert(spent >= participant_balance, 'drew too much');
+            let spent = contract_balance_before_call - contract_balance_after_call;
+
+            assert(user_balance >= spent, 'drew too much');
 
             s_participants::write(
                 get_caller_address(),
                 Participant {
                     public_key: p.public_key, nonce: p.nonce + u256 {
                         low: 1_u128, high: 0_u128
-                    }, balance: participant_balance - spent, timeout: p.timeout,
+                    }, balance: user_balance - spent, timeout: p.timeout,
                 }
             );
             return response;
@@ -285,8 +291,10 @@ mod Account {
         let is_valid = is_valid_signature(
             tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32)
         );
-    // problem validating the and here
-    // assert(is_valid, 'Invalid signature.');
+
+        signature_valid(tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32), is_valid);
+        // problem validating the and here
+        // assert(is_valid, 'Invalid signature.');
     }
 
     fn _call_contract(call: AccountCall) -> Span::<felt252> {
