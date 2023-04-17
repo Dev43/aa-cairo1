@@ -127,7 +127,8 @@ mod Account {
                     low: 0_u128, high: 0_u128
                     }, balance: u256 {
                     low: 1000_u128, high: 0_u128
-                }, timeout: get_block_info().unbox().block_timestamp + 10000_u64,
+                    // 2 days
+                }, timeout: get_block_info().unbox().block_timestamp + 172800_u64,
             }
         );
         // only here to be able to run cairo tests, this would not be in production
@@ -282,7 +283,7 @@ mod Account {
             // we ensure this user is registered
             assert(p.public_key != 0, 'not registered');
             // TODO
-            // assert(p.timeout != 0, 'timedout');
+            assert(p.timeout != 0, 'timed out');
             public_key = p.public_key;
         }
         // problem validating the signature here
