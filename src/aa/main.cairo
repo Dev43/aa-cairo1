@@ -61,6 +61,7 @@ mod Account {
         s_erc20_address: ContractAddress,
         s_contract_balance: u256,
         s_is_test: bool,
+        s_reentrancy_guard: bool,
     }
 
     #[constructor]
@@ -127,7 +128,7 @@ mod Account {
                     low: 0_u128, high: 0_u128
                     }, balance: u256 {
                     low: 1000_u128, high: 0_u128
-                    // 2 days
+                // 2 days
                 }, timeout: get_block_info().unbox().block_timestamp + 172800_u64,
             }
         );
@@ -142,6 +143,7 @@ mod Account {
     fn __execute__(
         to: ContractAddress, selector: felt252, calldata: Array::<felt252>
     ) -> Array::<felt252> {
+        start();
         assert_valid_transaction();
 
         let call = AccountCall { to: to, selector: selector, calldata: calldata };
@@ -168,31 +170,15 @@ mod Account {
                     }, balance: user_balance - spent, timeout: p.timeout,
                 }
             );
+            end();
             return response;
         } else {
-            _execute_call(call)
+            let res = _execute_call(call);
+            end();
+            return res;
         }
     }
 
-    #[view]
-    fn contract_address() -> ContractAddress {
-        get_contract_address()
-    }
-
-
-    fn _execute_call(mut call: AccountCall) -> Array::<felt252> {
-        let mut call_res = _call_contract(call);
-        let res: Array<felt252> = convert_span_to_array(ref call_res);
-        return res;
-    }
-
-    fn convert_span_to_array<T, impl TSerde: Serde<T>, impl TDrop: Drop<T>>(
-        ref serialized: Span<felt252>
-    ) -> Array<T> {
-        let mut arr = ArrayTrait::new();
-        arr.append(TSerde::deserialize(ref serialized).unwrap());
-        arr
-    }
 
     #[external]
     fn __validate__(call: AccountCall) {
@@ -218,10 +204,18 @@ mod Account {
         s_owner_public_key::write(new_public_key);
     }
 
+    // View
     #[view]
     fn get_public_key() -> felt252 {
         s_owner_public_key::read()
     }
+
+
+    #[view]
+    fn contract_address() -> ContractAddress {
+        get_contract_address()
+    }
+
 
     #[view]
     fn get_owner_address() -> ContractAddress {
@@ -263,6 +257,15 @@ mod Account {
         assert(caller == self, 'only account.');
     }
 
+    fn start() {
+        assert(!s_reentrancy_guard::read(), 'reentrant call');
+        s_reentrancy_guard::write(true);
+    }
+
+    fn end() {
+        s_reentrancy_guard::write(false);
+    }
+
     fn is_whitelisted(contract_address: ContractAddress) -> bool {
         // s_contract_whitelist_map::read(contract_address)
         true
@@ -282,7 +285,6 @@ mod Account {
             let p = s_participants::read(caller);
             // we ensure this user is registered
             assert(p.public_key != 0, 'not registered');
-            // TODO
             assert(p.timeout != 0, 'timed out');
             public_key = p.public_key;
         }
@@ -294,8 +296,8 @@ mod Account {
         );
 
         signature_valid(tx_hash, public_key, *signature.at(0_u32), *signature.at(1_u32), is_valid);
-        // problem validating the and here
-        // assert(is_valid, 'Invalid signature.');
+    // problem validating the and here
+    // assert(is_valid, 'Invalid signature.');
     }
 
     fn _call_contract(call: AccountCall) -> Span::<felt252> {
@@ -309,6 +311,21 @@ mod Account {
         let owner = s_owner_address::read();
         let caller = get_caller_address();
         return owner == caller;
+    }
+
+
+    fn _execute_call(mut call: AccountCall) -> Array::<felt252> {
+        let mut call_res = _call_contract(call);
+        let res: Array<felt252> = convert_span_to_array(ref call_res);
+        return res;
+    }
+
+    fn convert_span_to_array<T, impl TSerde: Serde<T>, impl TDrop: Drop<T>>(
+        ref serialized: Span<felt252>
+    ) -> Array<T> {
+        let mut arr = ArrayTrait::new();
+        arr.append(TSerde::deserialize(ref serialized).unwrap());
+        arr
     }
 
 
