@@ -79,8 +79,8 @@ mod Account {
         _token_class: felt252, _name: felt252, _symbol: felt252, _initial_supply: u256, 
     ) {
         let contract_address = get_contract_address();
-        let owner_key = s_owner_public_key::read();
-        assert(owner_key == 0, 'already initialized');
+        let erc20_address = s_erc20_address::read();
+        assert(contract_address_to_felt252(erc20_address) == 0, 'already initialized');
         let mut constructor_calldata: Array<felt252> = ArrayTrait::new();
         constructor_calldata.append(_name);
         constructor_calldata.append(_symbol);
